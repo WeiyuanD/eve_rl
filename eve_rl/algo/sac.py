@@ -46,6 +46,20 @@ class SACPlayOnly(AlgoPlayOnly):
             action = action.squeeze(0).squeeze(0).cpu().detach().numpy()
             action += np.random.normal(0, self.exploration_action_noise)
         return action
+    
+    def get_action_exploration(self, flat_state: np.ndarray) -> np.ndarray:
+        with torch.no_grad():
+            torch_state = torch.as_tensor(
+                flat_state, dtype=torch.float32, device=self.device
+            )
+            torch_state = torch_state.unsqueeze(0).unsqueeze(0)
+            mean, log_std = self.model.policy.forward_play(torch_state)
+            std = log_std.exp()
+            normal = Normal(mean, std)
+            action = torch.tanh(normal.sample())
+            action = action.squeeze(0).squeeze(0).cpu().detach().numpy()
+            action += np.random.normal(0, self.exploration_action_noise)
+        return action, mean, log_std
 
     def get_eval_action(self, flat_state: np.ndarray) -> np.ndarray:
         with torch.no_grad():
@@ -64,6 +78,24 @@ class SACPlayOnly(AlgoPlayOnly):
 
             action = action.squeeze(0).squeeze(0).cpu().detach().numpy()
         return action * self.action_scaling
+    
+    def get_action_evaluation(self, flat_state: np.ndarray) -> np.ndarray:
+        with torch.no_grad():
+            torch_state = torch.as_tensor(
+                flat_state, dtype=torch.float32, device=self.device
+            )
+            torch_state = torch_state.unsqueeze(0).unsqueeze(0)
+            mean, log_std = self.model.policy.forward_play(torch_state)
+            if self.stochastic_eval:
+                std = log_std.exp()
+                normal = Normal(mean, std)
+                action = torch.tanh(normal.sample())
+            else:
+                mean, _ = self.model.policy.forward_play(torch_state)
+                action = torch.tanh(mean)
+
+            action = action.squeeze(0).squeeze(0).cpu().detach().numpy()
+        return action * self.action_scaling, mean, log_std
 
     def to(self, device: torch.device):
         super().to(device)
