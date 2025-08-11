@@ -255,6 +255,7 @@ class Single(SingleEvalOnly, Agent):
         t_duration = perf_counter() - t_start
         self._log_task_completion("heatup", n_steps, t_duration, n_episodes)
         return episodes_data
+    # heatup ends
 
     def explore(
         self,
