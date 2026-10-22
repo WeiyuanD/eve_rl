@@ -85,8 +85,18 @@ class SACModel(Model):
                         idx = optim_ids.index(id(old_param))
                         param_group["params"][idx] = new_param
 
+        old_log_alpha = self.log_alpha
         self.log_alpha = self.log_alpha.detach().to(device=device).requires_grad_()
         self.alpha_optimizer.param_groups[0]["params"] = [self.log_alpha]
+        # Keep restored Adam moments attached when the alpha leaf is replaced.
+        if old_log_alpha in self.alpha_optimizer.state:
+            self.alpha_optimizer.state[self.log_alpha] = self.alpha_optimizer.state.pop(old_log_alpha)
+        for optimizer in (self.q1_optimizer, self.q2_optimizer,
+                          self.policy_optimizer, self.alpha_optimizer):
+            for state in optimizer.state.values():
+                for key, value in state.items():
+                    if torch.is_tensor(value) and key != "step":
+                        state[key] = value.to(device)
 
     def update_target_q(self, tau):
         for target_param, param in zip(

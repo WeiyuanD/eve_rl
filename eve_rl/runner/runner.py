@@ -132,6 +132,7 @@ class Runner(EveRLObject):
         eval_results.update(self._results)
         eval_results.pop("best quality")
         eval_results.pop("best explore steps")
+        eval_results["best_eval"] = dict(self.best_eval)
 
         self.agent.save_checkpoint(checkpoint_file, eval_results)
         if save_best:
@@ -148,7 +149,14 @@ class Runner(EveRLObject):
             writer = csv.writer(csvfile, delimiter=";")
             writer.writerow(self._results.values())
 
+        self.on_evaluation(result_episodes, save_best)
         return quality, reward
+
+    def on_evaluation(self, episodes, save_best):
+        """Optional reporting hook after checkpoints and results are saved."""
+
+    def on_training_batch(self, episodes, losses):
+        """Optional reporting hook; does not participate in learning."""
 
     def explore_and_update(
         self,
@@ -175,10 +183,11 @@ class Runner(EveRLObject):
                 self.step_counter.exploration * update_steps_per_explore_step
                 - self.step_counter.update
             )
-            self.agent.explore_and_update(
+            episodes, losses = self.agent.explore_and_update(
                 explore_episodes=explore_episodes_between_updates,
                 update_steps=update_steps,
             )
+            self.on_training_batch(episodes, losses)
 
     def training_run(
         self,
@@ -191,10 +200,12 @@ class Runner(EveRLObject):
         eval_seeds: Optional[List[int]] = None,
     ):
         # TODO: Log Training Run Infos
-        self.heatup(heatup_steps)
+        if heatup_steps > 0:
+            self.heatup(heatup_steps)
         next_eval_step_limt = (
             self.agent.step_counter.exploration + explore_steps_between_eval
         )
+        quality = reward = None
         while self.agent.step_counter.exploration < training_steps:
             self.explore_and_update(
                 explore_episodes_between_updates,

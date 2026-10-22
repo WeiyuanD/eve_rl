@@ -123,7 +123,14 @@ class VanillaStepShared(VanillaSharedBase):
 
 
 class VanillaEpisodeShared(VanillaStepShared):
+    def __init__(self, capacity, batch_size, sample_device: torch.device,
+                 image_size: int = 0):
+        # Set before the parent starts the replay process.
+        self.image_size = image_size
+        super().__init__(capacity, batch_size, sample_device)
+
     def run(self):
         # os.nice(15)
-        internal_replay_buffer = VanillaEpisode(self.capacity, self._batch_size)
+        internal_replay_buffer = VanillaEpisode(
+            self.capacity, self._batch_size, self.image_size)
         self.loop(internal_replay_buffer)

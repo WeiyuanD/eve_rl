@@ -1,9 +1,9 @@
 import platform
 from typing import Any, Dict, List, Optional, Tuple
-from random import randint
 import logging
 import logging.config
 import os
+import sys
 import traceback
 import queue
 
@@ -21,51 +21,53 @@ from .single import Single, Algo, ReplayBuffer, gym
 from ..replaybuffer import Episode
 
 
-def file_handler_callback(handler: logging.FileHandler):
-    handler_dict = {
-        handler.name: {
-            "level": handler.level,
-            "class": "logging.FileHandler",
-            "filename": handler.baseFilename,
-            "mode": handler.mode,
-        }
-    }
-    if handler.formatter is not None:
-        formatter_name = handler.name or randint(1, 99999)
-        handler_dict[handler.name]["formatter"] = str(formatter_name)
-        # pylint: disable=protected-access
-        formatter_dict = {str(formatter_name): {"format": handler.formatter._fmt}}
-    else:
-        formatter_dict = None
-    return handler_dict, formatter_dict, handler.name
-
-
-handler_callback = {logging.FileHandler: file_handler_callback}
-
-
 def get_logging_config_dict():
+    """Copy ordinary console/file logging without pickling live handlers."""
     config = {
         "version": 1,
         "disable_existing_loggers": False,
         "formatters": {},
         "handlers": {},
-        "loggers": {
-            "": {
-                "handlers": [],
-                "level": logging.WARNING,
-                "propagate": False,
-            },  # root logger
-        },
+        "root": {"handlers": [], "level": logging.root.level},
     }
-
-    config["loggers"][""]["level"] = logging.root.level
-    config["loggers"][""]["propagate"] = logging.root.propagate
-    for handler in logging.root.handlers:
-        handler_dict, formatter_dict, name = handler_callback[type(handler)](handler)
-        if formatter_dict is not None:
-            config["formatters"].update(formatter_dict)
-        config["handlers"].update(handler_dict)
-        config["loggers"][""]["handlers"].append(name)
+    for index, handler in enumerate(logging.root.handlers):
+        # FileHandler is a StreamHandler subclass, so check it first.
+        if isinstance(handler, logging.FileHandler):
+            handler_config = {
+                "class": "logging.FileHandler",
+                "filename": handler.baseFilename,
+                "mode": handler.mode,
+                "encoding": handler.encoding,
+                "errors": handler.errors,
+            }
+        elif type(handler) is logging.StreamHandler:
+            handler_config = {
+                "class": "logging.StreamHandler",
+                "stream": "ext://sys.stdout" if handler.stream is sys.stdout
+                          else "ext://sys.stderr",
+            }
+        else:
+            # SDK/third-party handlers belong to the parent process.
+            logging.getLogger(__name__).warning(
+                "Not copying logging handler %s into workers", type(handler).__name__
+            )
+            continue
+        # basicConfig handlers are unnamed; distinct string IDs also avoid
+        # collisions between console and file handlers with the same name.
+        name = f"worker_handler_{index}"
+        handler_config["level"] = handler.level
+        if handler.formatter is not None:
+            formatter = handler.formatter
+            style = {logging.PercentStyle: "%", logging.StrFormatStyle: "{",
+                     logging.StringTemplateStyle: "$"}.get(type(formatter._style), "%")
+            config["formatters"][name] = {
+                "format": formatter._fmt,
+                "datefmt": formatter.datefmt,
+                "style": style,
+            }
+            handler_config["formatter"] = name
+        config["handlers"][name] = handler_config
+        config["root"]["handlers"].append(name)
     return config
 
 
@@ -98,8 +100,7 @@ def run(
                 filename = handler_config["filename"]
                 path, _ = os.path.split(filename)
                 path = os.path.join(path, "logs_subprocesses")
-                if not os.path.isdir(path):
-                    os.mkdir(path)
+                os.makedirs(path, exist_ok=True)
                 filename = os.path.join(path, f"{name}.log")
                 log_config_dict["handlers"][handler_name]["filename"] = filename
         logging.config.dictConfig(log_config_dict)
@@ -261,8 +262,7 @@ class SingleAgentProcess(Agent):
                 filename = handler_config["filename"]
                 path, _ = os.path.split(filename)
                 path = os.path.join(path, "logs_subprocesses")
-                if not os.path.isdir(path):
-                    os.mkdir(path)
+                os.makedirs(path, exist_ok=True)
 
         self._process = mp.Process(
             target=run,

@@ -157,7 +157,7 @@ def make_env() -> eve.Env:
         # rotation_yzx_deg=[0, -20, -5],
     )
 
-    device = eve.intervention.device.JShaped()
+    instrument = eve.intervention.instrument.Angled()
 
     simulation = eve.intervention.simulation.SofaBeamAdapter(friction=0.001)
 
@@ -177,13 +177,13 @@ def make_env() -> eve.Env:
 
     intervention = eve.intervention.MonoPlaneStatic(
         vessel_tree=vessel_tree,
-        devices=[device],
+        instruments=[instrument],
         simulation=simulation,
         fluoroscopy=fluoroscopy,
         target=target,
     )
 
-    start = eve.start.MaxDeviceLength(intervention=intervention, max_length=500)
+    start = eve.start.MaxInstrumentLength(intervention=intervention, max_length=500)
     pathfinder = eve.pathfinder.BruteForceBFS(intervention=intervention)
 
     position = eve.observation.Tracking2D(intervention=intervention, n_points=5)
@@ -229,4 +229,4 @@ def make_env() -> eve.Env:
 
 
 if __name__ == "__main__":
-    result = sac_training(device=torch.device("mps"))
+    result = sac_training("cuda" if torch.cuda.is_available() else "cpu")

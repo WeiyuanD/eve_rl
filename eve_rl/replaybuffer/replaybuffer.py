@@ -28,6 +28,10 @@ class Episode:
         self.flat_state_to_state = flat_obs_to_obs
         self.seed = seed
         self.options = options
+        # Reporting metadata only; deliberately excluded by to_replay().
+        self.wall_time_seconds = None
+        self.video_frames = []
+        self.video_fps = None
 
     def add_transition(
         self,

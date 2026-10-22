@@ -105,6 +105,7 @@ class SingleEvalOnly(AgentEvalOnly):
         flat_obs, flat_obs_to_obs = flatten_obs(obs)
         episode = Episode(obs, flat_obs, flat_obs_to_obs, seed, options)
 
+        navigation_start = perf_counter()
         while not (terminal or truncation):
             action = action_function(flat_obs)
 
@@ -124,6 +125,9 @@ class SingleEvalOnly(AgentEvalOnly):
                 if terminal or truncation:
                     break
 
+        episode.wall_time_seconds = perf_counter() - navigation_start
+        if hasattr(env, "pop_episode_video"):
+            episode.video_frames, episode.video_fps = env.pop_episode_video()
         return episode, step_counter
 
     def to(self, device: torch.device):
@@ -238,6 +242,7 @@ class Single(SingleEvalOnly, Agent):
         ):
             with self.episode_counter.lock:
                 self.episode_counter.heatup += 1
+                episode_number = self.episode_counter.heatup
 
             episode, n_steps_episode = self._play_episode(
                 env=self.env_train,
@@ -247,6 +252,11 @@ class Single(SingleEvalOnly, Agent):
 
             with self.step_counter.lock:
                 self.step_counter.heatup += n_steps_episode
+                if hasattr(self.env_train, "report_episode_progress"):
+                    self.env_train.report_episode_progress(
+                        "heatup", episode_number,
+                        self.step_counter.heatup, episode,
+                    )
             n_steps += n_steps_episode
             n_episodes += 1
             self.replay_buffer.push(episode)
@@ -280,6 +290,7 @@ class Single(SingleEvalOnly, Agent):
         ):
             with self.episode_counter.lock:
                 self.episode_counter.exploration += 1
+                episode_number = self.episode_counter.exploration
 
             episode, n_steps_episode = self._play_episode(
                 env=self.env_train,
@@ -289,6 +300,11 @@ class Single(SingleEvalOnly, Agent):
 
             with self.step_counter.lock:
                 self.step_counter.exploration += n_steps_episode
+                if hasattr(self.env_train, "report_episode_progress"):
+                    self.env_train.report_episode_progress(
+                        "train", episode_number,
+                        self.step_counter.exploration, episode,
+                    )
 
             n_episodes += 1
             n_steps += n_steps_episode
